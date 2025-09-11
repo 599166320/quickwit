@@ -89,6 +89,7 @@ impl SourceConfig {
             SourceParams::Stdin => serde_json::to_value(()),
             SourceParams::Vec(params) => serde_json::to_value(params),
             SourceParams::Void(params) => serde_json::to_value(params),
+            SourceParams::TailSamplingKafka(params) => serde_json::to_value(params),
         }
         .expect("`SourceParams` should be JSON serializable")
     }
@@ -234,6 +235,7 @@ pub enum SourceParams {
     Stdin,
     Vec(VecSourceParams),
     Void(VoidSourceParams),
+    TailSamplingKafka(KafkaSourceParams),
 }
 
 impl SourceParams {
@@ -266,6 +268,7 @@ impl SourceParams {
             SourceParams::Stdin => SourceType::Stdin,
             SourceParams::Vec(_) => SourceType::Vec,
             SourceParams::Void(_) => SourceType::Void,
+            SourceParams::TailSamplingKafka(_) => SourceType::TailSamplingKafka,
         }
     }
 
@@ -276,6 +279,9 @@ impl SourceParams {
                 SourceParams::File(FileSourceParams::Notifications(new)),
             ) => current.validate_update(new),
             (SourceParams::Kafka(current), SourceParams::Kafka(new)) => {
+                current.validate_update(new)
+            }
+            (SourceParams::TailSamplingKafka(current), SourceParams::TailSamplingKafka(new)) => {
                 current.validate_update(new)
             }
             (SourceParams::Kinesis(current), SourceParams::Kinesis(new)) => {

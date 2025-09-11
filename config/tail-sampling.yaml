@@ -1,0 +1,115 @@
+config_id: 1
+
+kafka_consumer: 
+  group_id: tail-sampling01
+  bootstrap_servers: localhost:9092
+  enable_partition_eof: false
+  auto_offset_reset: earliest
+  topic: otel
+  max_partition_fetch_bytes: 104857600
+  receive_message_max_bytes: 655360000
+  partitions:
+    - 0
+    - 1
+    - 2
+  tracing_normal_kafka_producer:
+    realtime_kafka_producer_queue_size: 100
+    delay_kafka_producer_queue_size: 100
+    sampling_topic: trace_normal
+    kafka_producer_common_properties:
+      topic: error_trace_normal
+      bootstrap_servers: localhost:9092
+      message_timeout_ms: 60000
+      num_buckets: 1
+
+metric:
+  listen_port: 8002
+  bind_ip: 127.0.0.1
+  pushgateway_enable: false
+  pushgateway_url: http://pushgateway/metrics/job/otel_collector/instance
+  interval_sec: 15
+
+tracing:
+  logs_path:  
+
+monitor_batch_multiple: 0
+
+realtime_queue_batch_size: 1
+delay_queue_batch_size: 1
+
+realtime_queue_size: 1
+delay_queue_size: 1
+
+realtime_thread_num_per_partiton: 1
+delay_thread_num_per_partiton: 1
+
+realtime_processor_enabled: true
+delay_processor_enabled: true
+
+bloom:
+  num_items: 10000000000
+  fp_rate: 0.001
+
+trace:
+  slow_call_duration_mill: 3000
+  waite_duration_sec: 60
+  sampling_rate: 0.5
+  strategies_url: "http://10.115.0.121:8090/metrics-service/api/traceStrategies"
+
+core_affinity_enable: false
+
+dispatch:
+  url: "http://10.115.0.172:8071"
+  ping_period_sec: 5
+
+deploy_model: Single
+
+error_log_consumer:
+  consumer_common_properties:
+    group_id: tail-sampling01
+    bootstrap_servers: localhost:9092
+    enable_partition_eof: false
+    auto_offset_reset: earliest
+    topic: all_error_log
+    max_partition_fetch_bytes: 104857600
+    receive_message_max_bytes: 655360000
+  error_log_produce:
+    header:
+      key: type 
+      value: log
+    kafka_producer_common_properties:
+      topic: otel
+      bootstrap_servers: localhost:9092
+      message_timeout_ms: 60000
+      num_buckets: 3
+
+error_trace_id_consumer:
+  consumer_common_properties:
+    group_id: tail-sampling01
+    bootstrap_servers: bigdata01:9092
+    enable_partition_eof: false
+    auto_offset_reset: earliest
+    topic: error_trace_id_for_other_cloud
+    max_partition_fetch_bytes: 104857600
+    receive_message_max_bytes: 655360000
+  error_trace_id_produce:
+    header:
+      key: type 
+      value: error_trace_id
+    kafka_producer_common_properties:
+      topic: otel
+      bootstrap_servers: localhost:9092
+      message_timeout_ms: 60000
+      num_buckets: 3
+
+error_trace_id_for_other_cloud_producer:
+  mem_queue_size: 1000
+  kafka_producer_common_properties:
+    topic: error_trace_id_for_other_cloud
+    bootstrap_servers: localhost:9092
+    message_timeout_ms: 60000
+    num_buckets: 1
+
+task_switch:
+  error_log_consumer_task_enable: false
+  error_trace_id_task_enable: false

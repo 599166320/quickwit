@@ -63,6 +63,7 @@ version: 0.8
 # is stored. Defaults to `./qwdata`.
 #
 # data_dir: /path/to/data/dir
+data_dir: ./data/dir
 #
 # Metastore URI. Defaults to `data_dir/indexes#polling_interval=30s`,
 # which is a file-backed metastore and mostly convenient for testing. A cluster would

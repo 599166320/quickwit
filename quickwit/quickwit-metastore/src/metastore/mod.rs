@@ -1052,6 +1052,7 @@ fn use_shard_api(params: &SourceParams) -> bool {
         SourceParams::Stdin => panic!("stdin cannot be checkpointed"),
         SourceParams::Vec(_) => false,
         SourceParams::Void(_) => false,
+        SourceParams::TailSamplingKafka(_) => false,
     }
 }
 

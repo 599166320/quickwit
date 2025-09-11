@@ -32,7 +32,13 @@ macro_rules! bench_func {
                 |docs| async {
                     let (mailbox, handle, universe) = $func;
                     mailbox
-                        .send_message(RawDocBatch::new(docs, checkpoint_delta.clone(), false))
+                        .send_message(RawDocBatch::new(
+                            docs,
+                            checkpoint_delta.clone(),
+                            false,
+                            #[cfg(feature = "tail-sampling-kafka")]
+                            Vec::new(),
+                        ))
                         .await
                         .unwrap();
 

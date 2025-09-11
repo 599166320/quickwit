@@ -314,6 +314,7 @@ impl SourceType {
             SourceType::Unspecified => "unspecified",
             SourceType::Vec => "vec",
             SourceType::Void => "void",
+            SourceType::TailSamplingKafka => "tail-sampling-kafka",
         }
     }
 }
@@ -334,6 +335,7 @@ impl fmt::Display for SourceType {
             SourceType::Unspecified => "unspecified",
             SourceType::Vec => "vec",
             SourceType::Void => "void",
+            SourceType::TailSamplingKafka => "tail-sampling-kafka",
         };
         write!(f, "{source_type_str}")
     }

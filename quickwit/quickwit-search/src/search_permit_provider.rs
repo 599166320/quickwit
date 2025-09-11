@@ -298,7 +298,9 @@ impl Future for SearchPermitFuture {
         let receiver = Pin::new(&mut self.get_mut().0);
         match receiver.poll(cx) {
             Poll::Ready(Ok(search_permit)) => Poll::Ready(search_permit),
-            Poll::Ready(Err(_)) => panic!("Failed to acquire permit. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues."),
+            Poll::Ready(Err(_)) => panic!(
+                "Failed to acquire permit. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues."
+            ),
             Poll::Pending => Poll::Pending,
         }
     }

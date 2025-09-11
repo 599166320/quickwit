@@ -509,6 +509,7 @@ pub enum SourceType {
     Vec = 10,
     Void = 11,
     Stdin = 13,
+    TailSamplingKafka = 188,
 }
 impl SourceType {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -530,6 +531,7 @@ impl SourceType {
             Self::Vec => "SOURCE_TYPE_VEC",
             Self::Void => "SOURCE_TYPE_VOID",
             Self::Stdin => "SOURCE_TYPE_STDIN",
+            Self::TailSamplingKafka => "SOURCE_TYPE_TAIL_SAMPLING_KAFKA",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -548,6 +550,7 @@ impl SourceType {
             "SOURCE_TYPE_VEC" => Some(Self::Vec),
             "SOURCE_TYPE_VOID" => Some(Self::Void),
             "SOURCE_TYPE_STDIN" => Some(Self::Stdin),
+            "SOURCE_TYPE_TAIL_SAMPLING_KAFKA" => Some(Self::TailSamplingKafka),
             _ => None,
         }
     }

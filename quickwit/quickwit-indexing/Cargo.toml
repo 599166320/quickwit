@@ -37,6 +37,9 @@ pulsar = { workspace = true, optional = true }
 quickwit-query = { workspace = true }
 regex = { workspace = true }
 rdkafka = { workspace = true, optional = true }
+tail-sampling = { workspace = true, optional = true }
+dashmap = {workspace = true, optional = true}
+downcast-rs = {workspace = true}
 serde = { workspace = true }
 serde_json = { workspace = true }
 tantivy = { workspace = true }
@@ -72,6 +75,7 @@ gcp-pubsub = [
 ]
 gcp-pubsub-emulator-tests = []
 kafka = ["rdkafka"]
+tail-sampling-kafka = ["rdkafka", "tail-sampling", "dashmap"]
 kafka-broker-tests = []
 kinesis = [
   "aws-sdk-kinesis",

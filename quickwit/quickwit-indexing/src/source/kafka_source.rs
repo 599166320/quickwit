@@ -31,7 +31,7 @@ use rdkafka::consumer::{
     BaseConsumer, CommitMode, Consumer, ConsumerContext, DefaultConsumerContext, Rebalance,
 };
 use rdkafka::error::KafkaError;
-use rdkafka::message::BorrowedMessage;
+use rdkafka::message::{BorrowedMessage, Headers};
 use rdkafka::util::Timeout;
 use rdkafka::{ClientContext, Message, Offset, TopicPartitionList};
 use serde_json::{Value as JsonValue, json};
@@ -570,7 +570,14 @@ fn spawn_consumer_poll_loop(
         while !events_tx.is_closed() {
             if let Some(message_res) = consumer.poll(Some(Duration::from_secs(1))) {
                 let event = match message_res {
-                    Ok(message) => KafkaEvent::Message(message.into()),
+                    Ok(message) => {
+                        if let Some(h) = message.headers() {
+                            if h.count() > 0 {
+                                continue;
+                            }
+                        }
+                        KafkaEvent::Message(message.into())
+                    }
                     Err(KafkaError::PartitionEOF(partition)) => KafkaEvent::PartitionEOF(partition),
                     Err(error) => KafkaEvent::Error(anyhow!(error)),
                 };

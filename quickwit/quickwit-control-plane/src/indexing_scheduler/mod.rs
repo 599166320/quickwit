@@ -212,6 +212,7 @@ fn get_sources_to_schedule(model: &ControlPlaneModel) -> Vec<SourceToSchedule> {
                 });
             }
             SourceParams::Kafka(_)
+            | SourceParams::TailSamplingKafka(_)
             | SourceParams::Kinesis(_)
             | SourceParams::PubSub(_)
             | SourceParams::Pulsar(_)

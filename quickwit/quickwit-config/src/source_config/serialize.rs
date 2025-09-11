@@ -113,6 +113,7 @@ impl SourceConfigForSerialization {
             SourceParams::File(_)
             | SourceParams::Kafka(_)
             | SourceParams::Kinesis(_)
+            | SourceParams::TailSamplingKafka(_)
             | SourceParams::Pulsar(_) => {
                 // TODO consider any validation opportunity
             }
@@ -126,10 +127,13 @@ impl SourceConfigForSerialization {
         match &self.source_params {
             SourceParams::PubSub(_)
             | SourceParams::Kafka(_)
+            | SourceParams::TailSamplingKafka(_)
             | SourceParams::File(FileSourceParams::Notifications(_)) => {}
             _ => {
                 if self.num_pipelines > 1 {
-                    bail!("Quickwit currently supports multiple pipelines only for GCP PubSub or Kafka sources. open an issue https://github.com/quickwit-oss/quickwit/issues if you need the feature for other source types");
+                    bail!(
+                        "Quickwit currently supports multiple pipelines only for GCP PubSub or Kafka sources. open an issue https://github.com/quickwit-oss/quickwit/issues if you need the feature for other source types"
+                    );
                 }
             }
         }

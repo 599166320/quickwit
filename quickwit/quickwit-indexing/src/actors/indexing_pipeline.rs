@@ -18,6 +18,10 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
+#[cfg(feature = "tail-sampling-kafka")]
+use dashmap::DashMap;
+#[cfg(feature = "tail-sampling-kafka")]
+use downcast_rs::{Downcast, impl_downcast};
 use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, HEARTBEAT, Handler, Health, Mailbox,
     QueueCapacity, Supervisable,
@@ -45,6 +49,8 @@ use crate::actors::uploader::UploaderType;
 use crate::actors::{Indexer, Packager, Publisher, Uploader};
 use crate::merge_policy::MergePolicy;
 use crate::models::IndexingStatistics;
+#[cfg(feature = "tail-sampling-kafka")]
+use crate::source::TailSamplingKafkaSource;
 use crate::source::{
     AssignShards, Assignment, SourceActor, SourceRuntime, quickwit_supported_sources,
 };
@@ -413,7 +419,7 @@ impl IndexingPipeline {
             .set_kill_switch(self.kill_switch.clone())
             .spawn(indexer);
 
-        let doc_processor = DocProcessor::try_new(
+        let mut doc_processor = DocProcessor::try_new(
             index_id.to_string(),
             source_id.to_string(),
             self.params.doc_mapper.clone(),
@@ -421,15 +427,7 @@ impl IndexingPipeline {
             self.params.source_config.transform_config.clone(),
             self.params.source_config.input_format,
         )?;
-        let (doc_processor_mailbox, doc_processor_handle) = ctx
-            .spawn_actor()
-            .set_backpressure_micros_counter(
-                crate::metrics::INDEXER_METRICS
-                    .backpressure_micros
-                    .with_label_values(["doc_processor"]),
-            )
-            .set_kill_switch(self.kill_switch.clone())
-            .spawn(doc_processor);
+
         let source_runtime = SourceRuntime {
             pipeline_id: self.params.pipeline_id.clone(),
             source_config: self.params.source_config.clone(),
@@ -440,13 +438,32 @@ impl IndexingPipeline {
             event_broker: self.params.event_broker.clone(),
             indexing_setting: self.params.indexing_settings.clone(),
         };
+
         let source = ctx
             .protect_future(quickwit_supported_sources().load_source(source_runtime))
             .await?;
+
+        #[cfg(feature = "tail-sampling-kafka")]
+        if let Some(tail_sampling_source) = source.downcast_ref::<TailSamplingKafkaSource>() {
+            let partition_bloomfilter_map = tail_sampling_source.partition_bloomfilter_map.clone();
+            doc_processor.partition_bloomfilter_map_opt = Some(partition_bloomfilter_map);
+        }
+
+        let (doc_processor_mailbox, doc_processor_handle) = ctx
+            .spawn_actor()
+            .set_backpressure_micros_counter(
+                crate::metrics::INDEXER_METRICS
+                    .backpressure_micros
+                    .with_label_values(["doc_processor"]),
+            )
+            .set_kill_switch(self.kill_switch.clone())
+            .spawn(doc_processor);
+
         let actor_source = SourceActor {
             source,
             doc_processor_mailbox,
         };
+
         let (source_mailbox, source_handle) = ctx
             .spawn_actor()
             .set_mailboxes(source_mailbox, source_inbox)

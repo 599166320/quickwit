@@ -68,6 +68,10 @@ mod pulsar_source;
 mod queue_sources;
 mod source_factory;
 mod stdin_source;
+#[cfg(feature = "tail-sampling-kafka")]
+mod tail_sampling_kafka_source;
+#[cfg(feature = "tail-sampling-kafka")]
+use rdkafka::Message;
 mod vec_source;
 mod void_source;
 
@@ -78,6 +82,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use bytes::Bytes;
 use bytesize::ByteSize;
+use downcast_rs::{Downcast, impl_downcast};
 pub use file_source::{FileSource, FileSourceFactory};
 #[cfg(feature = "gcp-pubsub")]
 pub use gcp_pubsub_source::{GcpPubSubSource, GcpPubSubSourceFactory};
@@ -107,8 +112,12 @@ use quickwit_proto::metastore::{
 };
 use quickwit_proto::types::{IndexUid, NodeIdRef, PipelineUid, ShardId};
 use quickwit_storage::StorageResolver;
+#[cfg(feature = "tail-sampling-kafka")]
+use rdkafka::message::OwnedMessage;
 use serde_json::Value as JsonValue;
 pub use source_factory::{SourceFactory, SourceLoader, TypedSourceFactory};
+#[cfg(feature = "tail-sampling-kafka")]
+pub use tail_sampling_kafka_source::{TailSamplingKafkaSource, TailSamplingKafkaSourceFactory};
 use tokio::runtime::Handle;
 use tracing::error;
 pub use vec_source::{VecSource, VecSourceFactory};
@@ -233,7 +242,7 @@ pub type SourceContext = ActorContext<SourceActor>;
 /// }
 /// ```
 #[async_trait]
-pub trait Source: Send + 'static {
+pub trait Source: Downcast + Send + 'static {
     /// This method will be called before any calls to `emit_batches`.
     async fn initialize(
         &mut self,
@@ -307,6 +316,8 @@ pub trait Source: Send + 'static {
     /// source.
     fn observable_state(&self) -> JsonValue;
 }
+
+impl_downcast!(Source);
 
 /// The SourceActor acts as a thin wrapper over a source trait object to execute.
 ///
@@ -412,6 +423,11 @@ pub fn quickwit_supported_sources() -> &'static SourceLoader {
         source_factory.add_source(SourceType::IngestV2, IngestSourceFactory);
         #[cfg(feature = "kafka")]
         source_factory.add_source(SourceType::Kafka, KafkaSourceFactory);
+        #[cfg(feature = "tail-sampling-kafka")]
+        source_factory.add_source(
+            SourceType::TailSamplingKafka,
+            TailSamplingKafkaSourceFactory,
+        );
         #[cfg(feature = "kinesis")]
         source_factory.add_source(SourceType::Kinesis, KinesisSourceFactory);
         #[cfg(feature = "pulsar")]
@@ -455,6 +471,17 @@ pub async fn check_source_connectivity(
             #[cfg(feature = "kafka")]
             {
                 kafka_source::check_connectivity(params.clone()).await?;
+                Ok(())
+            }
+        }
+        #[allow(unused_variables)]
+        SourceParams::TailSamplingKafka(params) => {
+            #[cfg(not(feature = "tail-sampling-kafka"))]
+            anyhow::bail!("Quickwit was compiled without the `tail-sampling-kafka` feature");
+
+            #[cfg(feature = "tail-sampling-kafka")]
+            {
+                tail_sampling_kafka_source::check_connectivity(params.clone()).await?;
                 Ok(())
             }
         }
@@ -510,6 +537,8 @@ impl Handler<SuggestTruncate> for SourceActor {
 pub(super) struct BatchBuilder {
     // Do not directly append documents to this vector; otherwise, in-flight metrics will be
     // incorrect. Use `add_doc` instead.
+    #[cfg(feature = "tail-sampling-kafka")]
+    owned_messages: Vec<OwnedMessage>,
     docs: Vec<Bytes>,
     num_bytes: u64,
     checkpoint_delta: SourceCheckpointDelta,
@@ -527,6 +556,7 @@ impl BatchBuilder {
             SourceType::File => MEMORY_METRICS.in_flight.file(),
             SourceType::IngestV2 => MEMORY_METRICS.in_flight.ingest(),
             SourceType::Kafka => MEMORY_METRICS.in_flight.kafka(),
+            SourceType::TailSamplingKafka => MEMORY_METRICS.in_flight.tail_sampling_kafka(),
             SourceType::Kinesis => MEMORY_METRICS.in_flight.kinesis(),
             SourceType::PubSub => MEMORY_METRICS.in_flight.pubsub(),
             SourceType::Pulsar => MEMORY_METRICS.in_flight.pulsar(),
@@ -535,12 +565,24 @@ impl BatchBuilder {
         let gauge_guard = GaugeGuard::from_gauge(gauge);
 
         Self {
+            #[cfg(feature = "tail-sampling-kafka")]
+            owned_messages: Vec::with_capacity(capacity),
             docs: Vec::with_capacity(capacity),
             num_bytes: 0,
             checkpoint_delta: SourceCheckpointDelta::default(),
             force_commit: false,
             gauge_guard,
         }
+    }
+
+    #[cfg(feature = "tail-sampling-kafka")]
+    pub fn add_owned_messages(&mut self, owned_message: OwnedMessage) {
+        if let Some(payload) = owned_message.payload() {
+            let num_bytes = payload.len();
+            self.gauge_guard.add(num_bytes as i64);
+            self.num_bytes += num_bytes as u64;
+        }
+        self.owned_messages.push(owned_message);
     }
 
     pub fn add_doc(&mut self, doc: Bytes) {
@@ -555,7 +597,13 @@ impl BatchBuilder {
     }
 
     pub fn build(self) -> RawDocBatch {
-        RawDocBatch::new(self.docs, self.checkpoint_delta, self.force_commit)
+        RawDocBatch::new(
+            self.docs,
+            self.checkpoint_delta,
+            self.force_commit,
+            #[cfg(feature = "tail-sampling-kafka")]
+            self.owned_messages,
+        )
     }
 
     #[cfg(feature = "kafka")]

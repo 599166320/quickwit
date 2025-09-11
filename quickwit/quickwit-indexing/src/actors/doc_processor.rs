@@ -13,25 +13,44 @@
 // limitations under the License.
 
 use std::string::FromUtf8Error;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, RwLock, TryLockResult};
 
 use anyhow::{Context, bail};
 use async_trait::async_trait;
 use bytes::Bytes;
+#[cfg(feature = "tail-sampling-kafka")]
+use dashmap::DashMap;
+use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_common::metrics::IntCounter;
 use quickwit_common::rate_limited_tracing::rate_limited_warn;
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::{SourceInputFormat, TransformConfig};
 use quickwit_doc_mapper::{DocMapper, DocParsingError, JsonObject};
+#[cfg(feature = "tail-sampling-kafka")]
+use quickwit_opentelemetry::otlp::OtlpTracesService;
 use quickwit_opentelemetry::otlp::{
     JsonLogIterator, JsonSpanIterator, OtlpLogsError, OtlpTracesError, parse_otlp_logs_json,
     parse_otlp_logs_protobuf, parse_otlp_spans_json, parse_otlp_spans_protobuf,
 };
+#[cfg(feature = "tail-sampling-kafka")]
+use quickwit_proto::opentelemetry::proto::common::v1::InstrumentationScope;
+#[cfg(feature = "tail-sampling-kafka")]
+use quickwit_proto::opentelemetry::proto::resource::v1::Resource;
+#[cfg(feature = "tail-sampling-kafka")]
+use quickwit_proto::opentelemetry::proto::trace::v1::Span;
 use quickwit_proto::types::{IndexId, SourceId};
+#[cfg(feature = "tail-sampling-kafka")]
+use rdkafka::Message;
+#[cfg(feature = "tail-sampling-kafka")]
+use rdkafka::message::OwnedMessage;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
+#[cfg(feature = "tail-sampling-kafka")]
+use tail_sampling::bloom::RotatingBloom;
+#[cfg(feature = "tail-sampling-kafka")]
+use tail_sampling::processor::trace_processor::extract_all_spans;
 use tantivy::schema::{Field, Value};
 use tantivy::{DateTime, TantivyDocument};
 use thiserror::Error;
@@ -214,6 +233,66 @@ fn parse_raw_doc(
     _vrl_program_opt: Option<&mut VrlProgram>,
 ) -> JsonDocIterator {
     try_into_json_docs(input_format, raw_doc, num_bytes)
+}
+
+#[cfg(feature = "tail-sampling-kafka")]
+fn parse_kafka_message_into_doc(
+    input_format: SourceInputFormat,
+    owned_message: OwnedMessage,
+    _vrl_program_opt: Option<&mut VrlProgram>,
+    num_bytes: &mut u64,
+    partition_bloomfilter_map: Arc<DashMap<i32, Arc<RwLock<RotatingBloom>>>>,
+) -> JsonDocIterator {
+    let mut spans = Vec::new();
+    if !owned_message.headers().is_some() {
+        let partiton = owned_message.partition();
+        if let Some(partition_bloomfilter) = partition_bloomfilter_map.get(&partiton) {
+            if let TryLockResult::Ok(g) = partition_bloomfilter.try_read() {
+                if let Some(payload) = owned_message.payload() {
+                    if let Ok(resource_spans) = extract_all_spans(payload) {
+                        for resource_span in resource_spans {
+                            let resource_bytes = resource_span.0;
+                            *num_bytes = resource_bytes.len() as u64;
+                            if let Ok(otlp_resource) =
+                                OtlpTracesService::decode_resource(resource_bytes)
+                            {
+                                for span in resource_span.1 {
+                                    let trace_id_hex = span.0.as_bytes();
+                                    let exists: bool = g.contains(trace_id_hex);
+                                    if !exists {
+                                        let span_bytes = span.3;
+                                        *num_bytes = span_bytes.len() as u64;
+                                        let scope_bytes_opt = span.5;
+                                        let mut scope_bytes: &[u8] = &[];
+                                        if let Some(sb) = scope_bytes_opt {
+                                            *num_bytes = sb.len() as u64;
+                                            scope_bytes = sb;
+                                        }
+                                        if let Ok(otlp_span) =
+                                            OtlpTracesService::decode_otlp_span(span_bytes)
+                                        {
+                                            if let Ok(otlp_scope) =
+                                                OtlpTracesService::decode_scope(scope_bytes)
+                                            {
+                                                if let Ok(s) = OtlpTracesService::from_otlp(
+                                                    &otlp_resource,
+                                                    otlp_span,
+                                                    &otlp_scope,
+                                                ) {
+                                                    spans.push(s);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    JsonDocIterator::Spans(JsonSpanIterator::new(spans, 0))
 }
 
 enum JsonDocIterator {
@@ -412,6 +491,8 @@ pub struct DocProcessor {
     #[cfg(feature = "vrl")]
     transform_opt: Option<VrlProgram>,
     input_format: SourceInputFormat,
+    #[cfg(feature = "tail-sampling-kafka")]
+    pub partition_bloomfilter_map_opt: Option<Arc<DashMap<i32, Arc<RwLock<RotatingBloom>>>>>,
 }
 
 impl DocProcessor {
@@ -438,6 +519,8 @@ impl DocProcessor {
                 .map(VrlProgram::try_from_transform_config)
                 .transpose()?,
             input_format,
+            #[cfg(feature = "tail-sampling-kafka")]
+            partition_bloomfilter_map_opt: None,
         })
     }
 
@@ -486,6 +569,47 @@ impl DocProcessor {
                         "{error}",
                     );
                     self.counters.record_error(error, num_bytes as u64);
+                }
+            }
+        }
+    }
+
+    #[cfg(feature = "tail-sampling-kafka")]
+    fn process_raw_kafka_message(
+        &mut self,
+        owned_message: OwnedMessage,
+        processed_docs: &mut Vec<ProcessedDoc>,
+    ) {
+        #[cfg(feature = "vrl")]
+        let transform_opt = self.transform_opt.as_mut();
+        #[cfg(not(feature = "vrl"))]
+        let transform_opt: Option<&mut VrlProgram> = None;
+
+        let mut num_bytes: u64 = 0;
+        if let Some(partition_bloomfilter_map) = &self.partition_bloomfilter_map_opt {
+            for json_doc_result in parse_kafka_message_into_doc(
+                self.input_format,
+                owned_message,
+                transform_opt,
+                &mut num_bytes,
+                partition_bloomfilter_map.clone(),
+            ) {
+                let processed_doc_result =
+                    json_doc_result.and_then(|json_doc| self.process_json_doc(json_doc));
+                match processed_doc_result {
+                    Ok(processed_doc) => {
+                        self.counters.record_valid(processed_doc.num_bytes as u64);
+                        processed_docs.push(processed_doc);
+                    }
+                    Err(error) => {
+                        rate_limited_warn!(
+                            limit_per_min = 10,
+                            index_id = self.counters.index_id,
+                            source_id = self.counters.source_id,
+                            "{error}",
+                        );
+                        self.counters.record_error(error, num_bytes);
+                    }
                 }
             }
         }
@@ -572,20 +696,42 @@ impl Handler<RawDocBatch> for DocProcessor {
         if self.publish_lock.is_dead() {
             return Ok(());
         }
-        let mut processed_docs: Vec<ProcessedDoc> = Vec::with_capacity(raw_doc_batch.docs.len());
 
-        for raw_doc in raw_doc_batch.docs {
-            let _protected_zone_guard = ctx.protect_zone();
-            self.process_raw_doc(raw_doc, &mut processed_docs);
-            ctx.record_progress();
+        if raw_doc_batch.docs.len() > 0 {
+            let mut processed_docs: Vec<ProcessedDoc> =
+                Vec::with_capacity(raw_doc_batch.docs.len());
+
+            for raw_doc in raw_doc_batch.docs {
+                let _protected_zone_guard = ctx.protect_zone();
+                self.process_raw_doc(raw_doc, &mut processed_docs);
+                ctx.record_progress();
+            }
+            let processed_doc_batch = ProcessedDocBatch::new(
+                processed_docs,
+                raw_doc_batch.checkpoint_delta,
+                raw_doc_batch.force_commit,
+            );
+            ctx.send_message(&self.indexer_mailbox, processed_doc_batch)
+                .await?;
+        } else {
+            #[cfg(feature = "tail-sampling-kafka")]
+            {
+                let mut processed_docs: Vec<ProcessedDoc> =
+                    Vec::with_capacity(raw_doc_batch.owned_messages.len());
+                for owned_message in raw_doc_batch.owned_messages {
+                    let _protected_zone_guard = ctx.protect_zone();
+                    self.process_raw_kafka_message(owned_message, &mut processed_docs);
+                    ctx.record_progress();
+                }
+                let processed_doc_batch = ProcessedDocBatch::new(
+                    processed_docs,
+                    raw_doc_batch.checkpoint_delta,
+                    raw_doc_batch.force_commit,
+                );
+                ctx.send_message(&self.indexer_mailbox, processed_doc_batch)
+                    .await?;
+            }
         }
-        let processed_doc_batch = ProcessedDocBatch::new(
-            processed_docs,
-            raw_doc_batch.checkpoint_delta,
-            raw_doc_batch.force_commit,
-        );
-        ctx.send_message(&self.indexer_mailbox, processed_doc_batch)
-            .await?;
         Ok(())
     }
 }

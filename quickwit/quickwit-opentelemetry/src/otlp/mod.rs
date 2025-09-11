@@ -46,8 +46,8 @@ use tonic::Status;
 pub use trace_id::{TraceId, TryFromTraceIdError};
 pub use traces::{
     Event, JsonSpanIterator, Link, OTEL_TRACES_INDEX_ID, OTEL_TRACES_INDEX_ID_PATTERN,
-    OtlpGrpcTracesService, OtlpTracesError, Span, SpanFingerprint, SpanKind, SpanStatus,
-    parse_otlp_spans_json, parse_otlp_spans_protobuf,
+    OtlpGrpcTracesService, OtlpTracesError, OtlpTracesService, Span, SpanFingerprint, SpanKind,
+    SpanStatus, parse_otlp_spans_json, parse_otlp_spans_protobuf,
 };
 
 #[derive(Debug, Clone, Copy)]

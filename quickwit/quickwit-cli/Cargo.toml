@@ -105,6 +105,7 @@ release-feature-set = [
   "quickwit-storage/gcs",
   "quickwit-metastore/postgres",
   "quickwit-doc-mapper/multilang",
+  "quickwit-indexing/tail-sampling-kafka",
 ]
 release-feature-vendored-set = [
   "jemalloc",
@@ -119,6 +120,7 @@ release-feature-vendored-set = [
   "quickwit-storage/gcs",
   "quickwit-metastore/postgres",
   "quickwit-doc-mapper/multilang",
+  "quickwit-indexing/tail-sampling-kafka",
 ]
 release-macos-feature-vendored-set = [
   "jemalloc",
@@ -132,6 +134,7 @@ release-macos-feature-vendored-set = [
   "quickwit-storage/gcs",
   "quickwit-metastore/postgres",
   "quickwit-doc-mapper/multilang",
+  "quickwit-indexing/tail-sampling-kafka",
 ]
 release-jemalloc-profiled = [
   "release-feature-set",

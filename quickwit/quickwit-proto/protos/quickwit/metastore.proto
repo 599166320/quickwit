@@ -37,6 +37,8 @@ enum SourceType {
   SOURCE_TYPE_VEC = 10;
   SOURCE_TYPE_VOID = 11;
   SOURCE_TYPE_STDIN = 13;
+
+  SOURCE_TYPE_TAIL_SAMPLING_KAFKA = 188;
 }
 
 // Metastore meant to manage Quickwit's indexes, their splits and delete tasks.

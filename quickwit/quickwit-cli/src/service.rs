@@ -31,13 +31,17 @@ use tokio::signal;
 use tracing::{debug, info};
 
 use crate::checklist::{BLUE_COLOR, RED_COLOR};
-use crate::{config_cli_arg, get_resolvers, load_node_config, start_actor_runtimes};
+use crate::{
+    config_cli_arg, get_resolvers, load_node_config, start_actor_runtimes,
+    tail_sampling_config_cli_arg,
+};
 
 pub fn build_run_command() -> Command {
     Command::new("run")
         .about("Starts a Quickwit node.")
         .long_about("Starts a Quickwit node with all services enabled by default: `indexer`, `searcher`, `metastore`, `control-plane`, and `janitor`.")
         .arg(config_cli_arg())
+        .arg(tail_sampling_config_cli_arg())
         .args(&[
             arg!(--"service" <SERVICE> "Services (`indexer`, `searcher`, `metastore`, `control-plane`, or `janitor`) to run. If unspecified, all the supported services are started.")
                 .action(ArgAction::Append)

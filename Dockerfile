@@ -30,6 +30,7 @@ RUN apt-get -y update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY quickwit /quickwit
+COPY tail-sampling /Users/hk00518ml/rust-project/tail-sampling
 COPY config/quickwit.yaml /quickwit/config/quickwit.yaml
 COPY --from=ui-builder /quickwit/quickwit-ui/build /quickwit/quickwit-ui/build
 

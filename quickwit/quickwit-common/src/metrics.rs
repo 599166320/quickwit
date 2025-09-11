@@ -393,6 +393,15 @@ impl InFlightDataGauges {
     }
 
     #[inline]
+    pub fn tail_sampling_kafka(&self) -> &IntGauge {
+        static GAUGE: OnceLock<IntGauge> = OnceLock::new();
+        GAUGE.get_or_init(|| {
+            self.in_flight_gauge_vec
+                .with_label_values(["tail_sampling_kafka_source"])
+        })
+    }
+
+    #[inline]
     pub fn kinesis(&self) -> &IntGauge {
         static GAUGE: OnceLock<IntGauge> = OnceLock::new();
         GAUGE.get_or_init(|| {

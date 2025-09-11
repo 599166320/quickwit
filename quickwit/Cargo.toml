@@ -195,6 +195,10 @@ rdkafka = { version = "0.38", default-features = false, features = [
   "tokio",
   "zstd",
 ] }
+
+downcast-rs = "2.0.1"
+dashmap = "6.1.0"
+tail-sampling = { path = "/Users/hk00518ml/rust-project/tail-sampling", default-features = false}
 regex = "1.11"
 regex-syntax = "0.8"
 reqwest = { version = "0.12", default-features = false, features = [
@@ -373,7 +377,9 @@ sasl2-sys = { git = "https://github.com/quickwit-oss/rust-sasl/", rev = "085a4c7
 #tracing-subscriber = { git = "https://github.com/trinity-1686a/tracing.git", rev = "6806cac3" }
 
 [profile.dev]
-debug = false
+#debug = false
+debug = 2
+opt-level = 0
 
 [profile.release]
 lto = "thin"

@@ -25,8 +25,8 @@ use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{
-    ConfigFormat, DEFAULT_QW_CONFIG_PATH, MetastoreConfigs, NodeConfig, SourceConfig,
-    StorageConfigs,
+    ConfigFormat, DEFAULT_QW_CONFIG_PATH, DEFAULT_QW_TAIL_SAMPLING_CONFIG_PATH, MetastoreConfigs,
+    NodeConfig, SourceConfig, StorageConfigs,
 };
 use quickwit_indexing::check_source_connectivity;
 use quickwit_metastore::{IndexMetadataResponseExt, MetastoreResolver};
@@ -70,6 +70,16 @@ fn config_cli_arg() -> Arg {
         .help("Config file location")
         .env("QW_CONFIG")
         .default_value(DEFAULT_QW_CONFIG_PATH)
+        .global(true)
+        .display_order(1)
+}
+
+fn tail_sampling_config_cli_arg() -> Arg {
+    Arg::new("tail-sampling-config")
+        .long("tail-sampling-config")
+        .help("tail-sampling-config file location")
+        .env("QW_TAIL_SAMPING_CONFIG")
+        .default_value(DEFAULT_QW_TAIL_SAMPLING_CONFIG_PATH)
         .global(true)
         .display_order(1)
 }

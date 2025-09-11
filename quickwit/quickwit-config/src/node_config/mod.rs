@@ -42,6 +42,7 @@ use crate::storage_config::StorageConfigs;
 use crate::{ConfigFormat, MetastoreConfigs};
 
 pub const DEFAULT_QW_CONFIG_PATH: &str = "config/quickwit.yaml";
+pub const DEFAULT_QW_TAIL_SAMPLING_CONFIG_PATH: &str = "config/tail-sampling.yaml";
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

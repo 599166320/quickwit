@@ -17,10 +17,14 @@ use std::fmt;
 use bytes::Bytes;
 use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS};
 use quickwit_metastore::checkpoint::SourceCheckpointDelta;
+#[cfg(feature = "tail-sampling-kafka")]
+use rdkafka::message::OwnedMessage;
 
 pub struct RawDocBatch {
     // Do not directly append documents to this vector; otherwise, in-flight metrics will be
     // incorrect.
+    #[cfg(feature = "tail-sampling-kafka")]
+    pub owned_messages: Vec<OwnedMessage>,
     pub docs: Vec<Bytes>,
     pub checkpoint_delta: SourceCheckpointDelta,
     pub force_commit: bool,
@@ -32,6 +36,7 @@ impl RawDocBatch {
         docs: Vec<Bytes>,
         checkpoint_delta: SourceCheckpointDelta,
         force_commit: bool,
+        #[cfg(feature = "tail-sampling-kafka")] owned_messages: Vec<OwnedMessage>,
     ) -> Self {
         let delta = docs.iter().map(|doc| doc.len() as i64).sum::<i64>();
         let mut gauge_guard =
@@ -39,6 +44,8 @@ impl RawDocBatch {
         gauge_guard.add(delta);
 
         Self {
+            #[cfg(feature = "tail-sampling-kafka")]
+            owned_messages,
             docs,
             checkpoint_delta,
             force_commit,
@@ -50,7 +57,13 @@ impl RawDocBatch {
     pub fn for_test(docs: &[&[u8]], range: std::ops::Range<u64>) -> Self {
         let docs = docs.iter().map(|doc| Bytes::from(doc.to_vec())).collect();
         let checkpoint_delta = SourceCheckpointDelta::from_range(range);
-        Self::new(docs, checkpoint_delta, false)
+        Self::new(
+            docs,
+            checkpoint_delta,
+            false,
+            #[cfg(feature = "tail-sampling-kafka")]
+            Vec::new(),
+        )
     }
 }
 
@@ -69,6 +82,8 @@ impl Default for RawDocBatch {
     fn default() -> Self {
         let _gauge_guard = GaugeGuard::from_gauge(&MEMORY_METRICS.in_flight.doc_processor_mailbox);
         Self {
+            #[cfg(feature = "tail-sampling-kafka")]
+            owned_messages: Vec::new(),
             docs: Vec::new(),
             checkpoint_delta: SourceCheckpointDelta::default(),
             force_commit: false,

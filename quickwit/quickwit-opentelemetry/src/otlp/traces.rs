@@ -17,7 +17,7 @@ use std::collections::HashMap;
 use std::str::FromStr;
 
 use async_trait::async_trait;
-use prost::Message;
+use prost::{DecodeError, Message};
 use quickwit_common::thread_pool::run_cpu_intensive;
 use quickwit_common::uri::Uri;
 use quickwit_config::{ConfigFormat, IndexConfig, load_index_config_from_user_config};
@@ -515,7 +515,7 @@ const UNKNOWN_SERVICE: &str = "unknown_service";
 
 const SERVICE_NAME_KEY: &str = "service.name";
 
-struct Resource {
+pub struct Resource {
     service_name: String,
     attributes: HashMap<String, JsonValue>,
     dropped_attributes_count: u32,
@@ -547,7 +547,7 @@ impl Resource {
 }
 
 #[derive(Default)]
-struct Scope {
+pub struct Scope {
     name: Option<String>,
     version: Option<String>,
     attributes: HashMap<String, JsonValue>,
@@ -826,7 +826,7 @@ impl TraceService for OtlpGrpcTracesService {
 
 /// An iterator of JSON OTLP spans for use in the doc processor.
 pub struct JsonSpanIterator {
-    spans: std::vec::IntoIter<Span>,
+    pub spans: std::vec::IntoIter<Span>,
     current_span_idx: usize,
     num_spans: usize,
     avg_span_size: usize,
@@ -834,7 +834,7 @@ pub struct JsonSpanIterator {
 }
 
 impl JsonSpanIterator {
-    fn new(spans: Vec<Span>, num_bytes: usize) -> Self {
+    pub fn new(spans: Vec<Span>, num_bytes: usize) -> Self {
         let num_spans = spans.len();
         let avg_span_size = num_bytes.checked_div(num_spans).unwrap_or(0);
         let avg_span_size_rem = avg_span_size + num_bytes.checked_rem(num_spans).unwrap_or(0);
@@ -880,6 +880,36 @@ pub fn parse_otlp_spans_protobuf(
     let request = ExportTraceServiceRequest::decode(payload_proto)?;
     let spans = parse_otlp_spans(request)?;
     Ok(JsonSpanIterator::new(spans, payload_proto.len()))
+}
+
+pub struct OtlpTracesService {}
+
+impl OtlpTracesService {
+    pub fn decode_otlp_span(data: &[u8]) -> Result<OtlpSpan, DecodeError> {
+        OtlpSpan::decode(data)
+    }
+
+    pub fn decode_resource(data: &[u8]) -> Result<Resource, DecodeError> {
+        match OtlpResource::decode(data) {
+            Ok(r) => Ok(Resource::from_otlp(r)),
+            Err(e) => Err(e),
+        }
+    }
+
+    pub fn decode_scope(data: &[u8]) -> Result<Scope, DecodeError> {
+        match InstrumentationScope::decode(data) {
+            Ok(s) => Ok(Scope::from_otlp(s)),
+            Err(e) => Err(e),
+        }
+    }
+
+    pub fn from_otlp(
+        resource: &Resource,
+        otlp_span: OtlpSpan,
+        cope: &Scope,
+    ) -> Result<Span, OtlpTracesError> {
+        Span::from_otlp(otlp_span, resource, cope)
+    }
 }
 
 #[cfg(test)]
