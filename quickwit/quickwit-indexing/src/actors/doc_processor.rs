@@ -292,7 +292,7 @@ fn parse_kafka_message_into_doc(
             }
         }
     }
-    JsonDocIterator::Spans(JsonSpanIterator::new(spans, 0))
+    JsonDocIterator::Spans(JsonSpanIterator::new(spans, (*num_bytes).try_into().unwrap()))
 }
 
 enum JsonDocIterator {

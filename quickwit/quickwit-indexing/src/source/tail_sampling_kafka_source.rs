@@ -51,6 +51,7 @@ use tokio::sync::{mpsc, watch};
 use tokio::task::{JoinHandle, spawn_blocking};
 use tokio::time;
 use tracing::{Instrument, debug, info, warn};
+use tokio::sync::broadcast;
 
 use crate::actors::DocProcessor;
 use crate::models::{NewPublishLock, PublishLock};
@@ -98,6 +99,7 @@ pub struct TailSamplingKafkaSource {
     publish_lock: PublishLock,
     state: TailSamplingKafkaSourceState,
     pub partition_bloomfilter_map: Arc<DashMap<i32, Arc<RwLock<RotatingBloom>>>>,
+    shutdown_tx: broadcast::Sender<()>,
 }
 
 impl fmt::Debug for TailSamplingKafkaSource {
@@ -117,12 +119,16 @@ impl TailSamplingKafkaSource {
     ) -> anyhow::Result<Self> {
         let mut poll_loop_jhs = Vec::new();
 
+        let (shutdown_tx, _) = broadcast::channel::<()>(1);
+
+        let mut shutdown_rx = shutdown_tx.subscribe();
         if CONFIG.task_switch.error_log_consumer_task_enable {
             let poll_loop_jh = tokio::spawn(
                 async move {
                     //错误日志解析和处理,错误traceID写写入otel topic,并且还需要同步到另外一朵云
                     let mut error_log_processor = ErrorLogProcessor::init(
                         &CONFIG.error_log_consumer.consumer_common_properties,
+                        shutdown_rx
                     );
                     error_log_processor.producer_properties =
                         Some(CONFIG.error_log_consumer.error_log_produce.clone());
@@ -135,6 +141,7 @@ impl TailSamplingKafkaSource {
             poll_loop_jhs.push(poll_loop_jh);
         }
 
+        shutdown_rx = shutdown_tx.subscribe();
         if CONFIG.task_switch.error_trace_id_task_enable {
             let poll_loop_jh = tokio::spawn(
                 async move {
@@ -142,6 +149,7 @@ impl TailSamplingKafkaSource {
                     let mut error_trace_id_processor: ErrorTraceIdProcessor =
                         ErrorTraceIdProcessor::init(
                             &CONFIG.error_trace_id_consumer.consumer_common_properties,
+                            shutdown_rx
                         );
                     error_trace_id_processor.producer_properties = Some(
                         CONFIG
@@ -156,11 +164,13 @@ impl TailSamplingKafkaSource {
             poll_loop_jhs.push(poll_loop_jh);
         }
 
+
+        let shutdown_tx_clone = shutdown_tx.clone();
         let (partition_bloomfilter_map_tx, mut partition_bloomfilter_map_rx) = mpsc::channel(1);
-        let (events_tx, mut events_rx) = mpsc::channel(1);
+        let (events_tx, mut events_rx) = mpsc::channel(CONFIG.discard_queue_size.expect("The quickwit queue size must be greater than 0"));
         let poll_loop_jh = tokio::spawn(
             async move {
-                let mut kafka_consumer = kafka::KafkaConsumer::init().await;
+                let mut kafka_consumer = kafka::KafkaConsumer::init(shutdown_tx_clone).await;
                 kafka_consumer.discard_spans_sender = Some(events_tx);
                 partition_bloomfilter_map_tx
                     .send(kafka_consumer.partition_bloomfilter_map.clone())
@@ -211,7 +221,8 @@ impl TailSamplingKafkaSource {
             events_rx,
             publish_lock,
             state: TailSamplingKafkaSourceState::default(),
-            partition_bloomfilter_map: partition_bloomfilter_map,
+            partition_bloomfilter_map,
+            shutdown_tx
         })
     }
 
@@ -254,15 +265,11 @@ impl Source for TailSamplingKafkaSource {
         doc_processor_mailbox: &Mailbox<DocProcessor>,
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
-        info!(
-            index_uid=%self.source_runtime.index_uid(),
-            source_id=%self.source_runtime.source_id(),
-            "emit_batches start..."
-        );
         let now = Instant::now();
         let mut batch_builder = BatchBuilder::new(SourceType::Kafka);
         let deadline = time::sleep(*EMIT_BATCHES_TIMEOUT);
         tokio::pin!(deadline);
+
         loop {
             tokio::select! {
                 event_opt = self.events_rx.recv() => {
@@ -278,7 +285,8 @@ impl Source for TailSamplingKafkaSource {
             }
             ctx.record_progress();
         }
-        if !batch_builder.checkpoint_delta.is_empty() {
+
+        if batch_builder.num_bytes > 0 {
             debug!(
                 num_docs=%batch_builder.docs.len(),
                 num_bytes=%batch_builder.num_bytes,
@@ -310,6 +318,9 @@ impl Source for TailSamplingKafkaSource {
         _exit_status: &ActorExitStatus,
         _ctx: &SourceContext,
     ) -> anyhow::Result<()> {
+
+        let _ = self.shutdown_tx.send(());
+
         for poll_loop_jhself in &self.poll_loop_jhs {
             poll_loop_jhself.abort();
         }
