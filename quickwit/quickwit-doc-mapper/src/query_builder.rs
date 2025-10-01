@@ -23,10 +23,10 @@ use quickwit_query::query_ast::{
 use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_query::{InvalidQuery, find_field_or_hit_dynamic};
 use tantivy::Term;
-use tantivy::query::Query;
+use tantivy::query::{ Query};
 use tantivy::schema::{Field, Schema};
 use tracing::error;
-
+use quickwit_query::query_ast::bloom_filter_query::BloomFilterQuery;
 use crate::doc_mapper::FastFieldWarmupInfo;
 use crate::{Automaton, QueryParserError, TermRange, WarmupInfo};
 
@@ -118,7 +118,7 @@ pub(crate) fn build_query(
         with_validation,
     )?;
 
-    let term_set_query_fields = extract_term_set_query_fields(query_ast, &schema)?;
+    let mut term_set_query_fields = extract_term_set_query_fields(query_ast, &schema)?;
     let (term_ranges_grouped_by_field, automatons_grouped_by_field) =
         extract_prefix_term_ranges_and_automaton(query_ast, &schema, tokenizer_manager)?;
 
@@ -132,6 +132,17 @@ pub(crate) fn build_query(
             .or_default() |= need_position;
     });
 
+    {
+        // 添加 bloomfilter 字段提取
+        let mut bloomfilter_fields = ExtractBloomfilterFields {
+            term_dict_fields_to_warm_up: HashSet::new(),
+            schema: &schema,
+        };
+        let _: Result<(), anyhow::Error> = bloomfilter_fields.visit(query_ast);
+
+        term_set_query_fields.extend(bloomfilter_fields.term_dict_fields_to_warm_up);
+    }
+
     let warmup_info = WarmupInfo {
         term_dict_fields: term_set_query_fields,
         terms_grouped_by_field,
@@ -140,6 +151,7 @@ pub(crate) fn build_query(
         automatons_grouped_by_field,
         ..WarmupInfo::default()
     };
+
 
     Ok((query, warmup_info))
 }
@@ -304,7 +316,41 @@ impl<'a, 'b: 'a> QueryAstVisitor<'a> for ExtractPrefixTermRanges<'b> {
         self.add_automaton(field, Automaton::Regex(path, regex));
         Ok(())
     }
+
 }
+
+
+struct ExtractBloomfilterFields<'a> {
+    term_dict_fields_to_warm_up: HashSet<Field>,
+    schema: &'a Schema,
+}
+
+impl<'a> QueryAstVisitor<'a> for ExtractBloomfilterFields<'_> {
+    type Err = anyhow::Error;
+
+    fn visit_bloomfilter(&mut self, bloomfilter_query: &'a BloomFilterQuery) -> Result<(), Self::Err> {
+        if let Some((field, _field_entry, _path)) =
+            find_field_or_hit_dynamic(&bloomfilter_query.field, self.schema)
+        {
+            // 布隆过滤器需要遍历整个字典，所以添加到 term_dict_fields
+            self.term_dict_fields_to_warm_up.insert(field);
+        } else {
+            anyhow::bail!("field does not exist: {}", bloomfilter_query.field);
+        }
+
+        // 合并其他预热信息
+        if let Ok(field) = self.schema.get_field(bloomfilter_query.field.as_str()) {
+            self.term_dict_fields_to_warm_up.insert(field);
+        }
+
+        Ok(())
+    }
+}
+
+
+
+
+
 
 type TermRangeWarmupInfo = HashMap<Field, HashMap<TermRange, PositionNeeded>>;
 type AutomatonWarmupInfo = HashMap<Field, HashSet<Automaton>>;

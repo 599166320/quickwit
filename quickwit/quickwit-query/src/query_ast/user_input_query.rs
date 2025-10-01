@@ -29,6 +29,7 @@ use crate::query_ast::{
 };
 use crate::tokenizers::TokenizerManager;
 use crate::{BooleanOperand, InvalidQuery, JsonLiteral};
+use crate::query_ast::bloom_filter_query::BloomFilterQuery;
 
 const DEFAULT_PHRASE_QUERY_MAX_EXPANSION: u32 = 50;
 
@@ -178,6 +179,19 @@ fn convert_user_input_ast_to_query_ast(
                 Ok(term_set_query.into())
             }
             UserInputLeaf::Exists { field } => Ok(FieldPresenceQuery { field }.into()),
+            UserInputLeaf::Bloomfilter {field, filter_str} => {
+                let field = if let Some(field) = field {
+                    field
+                } else {
+                    bail!("Bloomfilter without field is not supported");
+                };
+                let bloom_filter_query = BloomFilterQuery {
+                    field,
+                    bloom_filter_base64: filter_str,
+                    lenient: false,
+                };
+                Ok(bloom_filter_query.into())
+            }
         },
         UserInputAst::Boost(underlying, boost) => {
             let query_ast = convert_user_input_ast_to_query_ast(

@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::find_field_or_hit_dynamic;
 use crate::not_nan_f32::NotNaNf32;
 use crate::query_ast::field_presence::FieldPresenceQuery;
 use crate::query_ast::user_input_query::UserInputQuery;
@@ -19,6 +20,7 @@ use crate::query_ast::{
     BoolQuery, FullTextQuery, PhrasePrefixQuery, QueryAst, RangeQuery, RegexQuery, TermQuery,
     TermSetQuery, WildcardQuery,
 };
+use crate::query_ast::bloom_filter_query::BloomFilterQuery;
 
 /// Simple trait to implement a Visitor over the QueryAst.
 pub trait QueryAstVisitor<'a> {
@@ -41,6 +43,7 @@ pub trait QueryAstVisitor<'a> {
             QueryAst::FieldPresence(exists) => self.visit_exists(exists),
             QueryAst::Wildcard(wildcard) => self.visit_wildcard(wildcard),
             QueryAst::Regex(regex) => self.visit_regex(regex),
+            QueryAst::BloomFilter(bloomfilter) => self.visit_bloomfilter(bloomfilter),
         }
     }
 
@@ -111,6 +114,10 @@ pub trait QueryAstVisitor<'a> {
     fn visit_regex(&mut self, _regex_query: &'a RegexQuery) -> Result<(), Self::Err> {
         Ok(())
     }
+    
+    fn visit_bloomfilter(&mut self, bloomfilter_query: &'a BloomFilterQuery) -> Result<(), Self::Err> {
+        Ok(())
+    }
 }
 
 /// Simple trait to implement a Visitor over the QueryAst.
@@ -134,6 +141,7 @@ pub trait QueryAstTransformer {
             QueryAst::FieldPresence(exists) => self.transform_exists(exists),
             QueryAst::Wildcard(wildcard) => self.transform_wildcard(wildcard),
             QueryAst::Regex(regex) => self.transform_regex(regex),
+            QueryAst::BloomFilter(bloomfilter) => self.transform_bloomfilter(bloomfilter),
         }
     }
 
@@ -235,5 +243,9 @@ pub trait QueryAstTransformer {
 
     fn transform_regex(&mut self, regex_query: RegexQuery) -> Result<Option<QueryAst>, Self::Err> {
         Ok(Some(QueryAst::Regex(regex_query)))
+    }
+
+    fn transform_bloomfilter(&mut self, bloomfilter: BloomFilterQuery) -> Result<Option<QueryAst>, Self::Err> {
+        Ok(Some(QueryAst::BloomFilter(bloomfilter)))
     }
 }

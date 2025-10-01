@@ -1040,6 +1040,9 @@ fn finalize_aggregation(
                 final_aggregation_results.into();
             postcard::to_stdvec(&final_aggregation_proxy)?
         }
+        QuickwitAggregations::BloomFilterAggregation(_) => {
+            return Ok(intermediate_aggregation_result_bytes_opt);
+        }
     };
     Ok(Some(merge_aggregation_result))
 }

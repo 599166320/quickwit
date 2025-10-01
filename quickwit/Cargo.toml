@@ -320,6 +320,7 @@ azure_storage_blobs = { version = "0.21", default-features = false, features = [
 
 opendal = { version = "0.53", default-features = false }
 reqsign = { version = "0.16", default-features = false }
+bloomfilter = "3.0.1"
 
 quickwit-actors = { path = "quickwit-actors" }
 quickwit-aws = { path = "quickwit-aws" }
@@ -350,7 +351,7 @@ quickwit-serve = { path = "quickwit-serve" }
 quickwit-storage = { path = "quickwit-storage" }
 quickwit-telemetry = { path = "quickwit-telemetry" }
 
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "80f5f1e", default-features = false, features = [
+tantivy = { path = "/Users/hk00518ml/RustroverProjects/tantivy", default-features = false, features = [
   "lz4-compression",
   "mmap",
   "quickwit",

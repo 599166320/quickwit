@@ -15,7 +15,7 @@
 use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::HashSet;
-
+use bloomfilter::Bloom;
 use itertools::Itertools;
 use quickwit_common::binary_heap::{SortKeyMapper, TopK};
 use quickwit_doc_mapper::{FastFieldWarmupInfo, WarmupInfo};
@@ -36,6 +36,7 @@ use tantivy::{DateTime, DocId, Score, SegmentOrdinal, SegmentReader, TantivyErro
 use crate::find_trace_ids_collector::{FindTraceIdsCollector, FindTraceIdsSegmentCollector, Span};
 use crate::top_k_collector::{QuickwitSegmentTopKCollector, specialized_top_k_segment_collector};
 use crate::{GlobalDocAddress, merge_resource_stats, merge_resource_stats_it};
+use crate::bloom_filter_collector::{BloomFilterCollector, BloomFilterSegmentCollector};
 
 #[derive(Clone, Debug)]
 pub(crate) enum SortByComponent {
@@ -469,6 +470,7 @@ fn get_score_extractor(
 enum AggregationSegmentCollectors {
     FindTraceIdsSegmentCollector(Box<FindTraceIdsSegmentCollector>),
     TantivyAggregationSegmentCollector(AggregationSegmentCollector),
+    BloomFilterSegmentCollector(Box<BloomFilterSegmentCollector>),
 }
 
 /// Quickwit collector working at the scale of the segment.
@@ -539,6 +541,9 @@ impl SegmentCollector for QuickwitSegmentCollector {
             Some(AggregationSegmentCollectors::TantivyAggregationSegmentCollector(collector)) => {
                 collector.collect_block(filtered_docs)
             }
+            Some(AggregationSegmentCollectors::BloomFilterSegmentCollector(collector)) => {
+                collector.collect_block(filtered_docs)
+            }
             None => (),
         }
     }
@@ -555,6 +560,9 @@ impl SegmentCollector for QuickwitSegmentCollector {
                 collector.collect(doc_id, score)
             }
             Some(AggregationSegmentCollectors::TantivyAggregationSegmentCollector(collector)) => {
+                collector.collect(doc_id, score)
+            }
+            Some(AggregationSegmentCollectors::BloomFilterSegmentCollector(collector)) => {
                 collector.collect(doc_id, score)
             }
             None => (),
@@ -577,6 +585,10 @@ impl SegmentCollector for QuickwitSegmentCollector {
             Some(AggregationSegmentCollectors::TantivyAggregationSegmentCollector(collector)) => {
                 let serialized = postcard::to_allocvec(&collector.harvest()?)
                     .expect("Collector fruit should be serializable.");
+                Some(serialized)
+            }
+            Some(AggregationSegmentCollectors::BloomFilterSegmentCollector(collector)) => {
+                let serialized = collector.harvest().into_bytes();
                 Some(serialized)
             }
             None => None,
@@ -603,6 +615,8 @@ pub enum QuickwitAggregations {
     FindTraceIdsAggregation(FindTraceIdsCollector),
     /// Your classic Tantivy aggregation.
     TantivyAggregations(Aggregations),
+    /// Aggregate the specified data into a Bloom filter.
+    BloomFilterAggregation(BloomFilterCollector),
 }
 
 impl QuickwitAggregations {
@@ -615,6 +629,9 @@ impl QuickwitAggregations {
             QuickwitAggregations::TantivyAggregations(aggregations) => {
                 get_fast_field_names(aggregations)
             }
+            QuickwitAggregations::BloomFilterAggregation(collector) => {
+                collector.fast_field_names()
+            }
         }
     }
 
@@ -626,6 +643,9 @@ impl QuickwitAggregations {
             QuickwitAggregations::TantivyAggregations(aggreg) => {
                 QuickwitIncrementalAggregations::TantivyAggregations(aggreg.clone(), Vec::new())
             }
+            QuickwitAggregations::BloomFilterAggregation(collector) => {
+                QuickwitIncrementalAggregations::BloomFilterAggregation(collector.clone(), collector.create_bloom_filter())
+            }
         }
     }
 }
@@ -634,6 +654,7 @@ impl QuickwitAggregations {
 enum QuickwitIncrementalAggregations {
     FindTraceIdsAggregation(FindTraceIdsCollector, Vec<Vec<Span>>),
     TantivyAggregations(Aggregations, Vec<Vec<u8>>),
+    BloomFilterAggregation(BloomFilterCollector, Bloom<Vec<u8>>),
     NoAggregation,
 }
 
@@ -651,6 +672,9 @@ impl QuickwitIncrementalAggregations {
             }
             QuickwitIncrementalAggregations::TantivyAggregations(_, state) => {
                 state.push(intermediate_result);
+            }
+            QuickwitIncrementalAggregations::BloomFilterAggregation(collector, state) => {
+                BloomFilterCollector::merge_with_bytes(state, intermediate_result);
             }
             QuickwitIncrementalAggregations::NoAggregation => (),
         }
@@ -679,6 +703,7 @@ impl QuickwitIncrementalAggregations {
                 None
             }
             QuickwitIncrementalAggregations::TantivyAggregations(_, _) => None,
+            QuickwitIncrementalAggregations::BloomFilterAggregation(collector, state) => {None}
             QuickwitIncrementalAggregations::NoAggregation => None,
         }
     }
@@ -699,6 +724,9 @@ impl QuickwitIncrementalAggregations {
                     &Some(QuickwitAggregations::TantivyAggregations(aggregation)),
                     state.iter().map(|vec| vec.as_slice()),
                 )
+            }
+            QuickwitIncrementalAggregations::BloomFilterAggregation(collector, state) => {
+                Ok(Some(state.into_bytes()))
             }
             QuickwitIncrementalAggregations::NoAggregation => Ok(None),
         }
@@ -790,6 +818,11 @@ impl Collector for QuickwitCollector {
                     )?,
                 ),
             ),
+            Some(QuickwitAggregations::BloomFilterAggregation(collector)) => {
+                Some(AggregationSegmentCollectors::BloomFilterSegmentCollector(
+                    Box::new(collector.for_segment(0, segment_reader)?),
+                ))
+            }
             None => None,
         };
         let score_extractor = get_score_extractor(&self.sort_by, segment_reader)?;
@@ -902,6 +935,9 @@ fn merge_intermediate_aggregation_result<'a>(
             } else {
                 None
             }
+        }
+        Some(QuickwitAggregations::BloomFilterAggregation(collector)) => {
+            BloomFilterCollector::merge_many_bytes(intermediate_aggregation_results).map(|a| a.into_bytes())
         }
         None => None,
     };

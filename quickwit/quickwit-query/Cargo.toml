@@ -32,6 +32,8 @@ whichlang = { workspace = true, optional = true }
 quickwit-common = { workspace = true }
 quickwit-datetime = { workspace = true }
 
+bloomfilter = { workspace = true }
+
 [dev-dependencies]
 criterion = { workspace = true }
 proptest = { workspace = true }

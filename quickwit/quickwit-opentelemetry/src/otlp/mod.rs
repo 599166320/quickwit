@@ -203,6 +203,7 @@ pub fn extract_otel_traces_index_id_patterns_from_metadata(
         })?;
         index_id_patterns.push(index_id_pattern.to_string());
     }
+    index_id_patterns.push("tracing_normal".to_string());
     Ok(index_id_patterns)
 }
 

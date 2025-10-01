@@ -39,6 +39,7 @@ tracing = { workspace = true }
 ttl_cache = { workspace = true }
 ulid = { workspace = true }
 utoipa = { workspace = true }
+bloomfilter = { workspace = true }
 
 quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }
