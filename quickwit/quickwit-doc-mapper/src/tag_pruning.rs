@@ -114,7 +114,7 @@ fn extract_unsimplified_tags_filter_ast(query_ast: QueryAst) -> UnsimplifiedTagF
         }
         QueryAst::FieldPresence(_) => UnsimplifiedTagFilterAst::Uninformative,
         QueryAst::Regex(_) => UnsimplifiedTagFilterAst::Uninformative,
-        QueryAst::BloomFilter(_) => UnsimplifiedTagFilterAst::Uninformative,
+        QueryAst::BloomMightContain(_) => UnsimplifiedTagFilterAst::Uninformative,
     }
 }
 

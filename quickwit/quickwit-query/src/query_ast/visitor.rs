@@ -20,7 +20,7 @@ use crate::query_ast::{
     BoolQuery, FullTextQuery, PhrasePrefixQuery, QueryAst, RangeQuery, RegexQuery, TermQuery,
     TermSetQuery, WildcardQuery,
 };
-use crate::query_ast::bloom_filter_query::BloomFilterQuery;
+use crate::query_ast::bloom_might_contain_query::BloomMightContainQuery;
 
 /// Simple trait to implement a Visitor over the QueryAst.
 pub trait QueryAstVisitor<'a> {
@@ -43,7 +43,7 @@ pub trait QueryAstVisitor<'a> {
             QueryAst::FieldPresence(exists) => self.visit_exists(exists),
             QueryAst::Wildcard(wildcard) => self.visit_wildcard(wildcard),
             QueryAst::Regex(regex) => self.visit_regex(regex),
-            QueryAst::BloomFilter(bloomfilter) => self.visit_bloomfilter(bloomfilter),
+            QueryAst::BloomMightContain(bloomfilter) => self.visit_bloomfilter(bloomfilter),
         }
     }
 
@@ -115,7 +115,7 @@ pub trait QueryAstVisitor<'a> {
         Ok(())
     }
     
-    fn visit_bloomfilter(&mut self, bloomfilter_query: &'a BloomFilterQuery) -> Result<(), Self::Err> {
+    fn visit_bloomfilter(&mut self, bloomfilter_query: &'a BloomMightContainQuery) -> Result<(), Self::Err> {
         Ok(())
     }
 }
@@ -141,7 +141,7 @@ pub trait QueryAstTransformer {
             QueryAst::FieldPresence(exists) => self.transform_exists(exists),
             QueryAst::Wildcard(wildcard) => self.transform_wildcard(wildcard),
             QueryAst::Regex(regex) => self.transform_regex(regex),
-            QueryAst::BloomFilter(bloomfilter) => self.transform_bloomfilter(bloomfilter),
+            QueryAst::BloomMightContain(bloomfilter) => self.transform_bloomfilter(bloomfilter),
         }
     }
 
@@ -245,7 +245,7 @@ pub trait QueryAstTransformer {
         Ok(Some(QueryAst::Regex(regex_query)))
     }
 
-    fn transform_bloomfilter(&mut self, bloomfilter: BloomFilterQuery) -> Result<Option<QueryAst>, Self::Err> {
-        Ok(Some(QueryAst::BloomFilter(bloomfilter)))
+    fn transform_bloomfilter(&mut self, bloomfilter: BloomMightContainQuery) -> Result<Option<QueryAst>, Self::Err> {
+        Ok(Some(QueryAst::BloomMightContain(bloomfilter)))
     }
 }

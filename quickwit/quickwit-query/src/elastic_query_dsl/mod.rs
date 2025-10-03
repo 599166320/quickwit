@@ -45,7 +45,7 @@ use crate::elastic_query_dsl::multi_match::MultiMatchQuery;
 use crate::elastic_query_dsl::regex_query::RegexQuery;
 use crate::elastic_query_dsl::terms_query::TermsQuery;
 use crate::not_nan_f32::NotNaNf32;
-use crate::query_ast::bloom_filter_query::BloomFilterQuery;
+use crate::query_ast::bloom_might_contain_query::BloomMightContainQuery;
 use crate::query_ast::QueryAst;
 
 /// Quickwit and Elasticsearch have different interpretations of leniency:
@@ -86,7 +86,7 @@ pub(crate) enum ElasticQueryDslInner {
     Range(RangeQuery),
     Exists(ExistsQuery),
     Regexp(RegexQuery),
-    BloomFilter(BloomFilterQuery),
+    BloomMightContain(BloomMightContainQuery),
 }
 
 #[derive(Deserialize, Debug, Eq, PartialEq, Clone)]
@@ -135,7 +135,7 @@ impl ConvertibleToQueryAst for ElasticQueryDslInner {
             Self::Exists(exists_query) => exists_query.convert_to_query_ast(),
             Self::MultiMatch(multi_match_query) => multi_match_query.convert_to_query_ast(),
             Self::Regexp(regex_query) => regex_query.convert_to_query_ast(),
-            Self::BloomFilter(bloom_filter_query) => {bloom_filter_query.convert_to_query_ast()}
+            Self::BloomMightContain(bloom_filter_query) => {bloom_filter_query.convert_to_query_ast()}
         }
     }
 }

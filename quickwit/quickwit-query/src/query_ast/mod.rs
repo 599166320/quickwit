@@ -31,7 +31,7 @@ mod user_input_query;
 pub(crate) mod utils;
 mod visitor;
 mod wildcard_query;
-pub mod bloom_filter_query;
+pub mod bloom_might_contain_query;
 
 pub use bool_query::BoolQuery;
 pub use field_presence::FieldPresenceQuery;
@@ -47,7 +47,7 @@ pub use visitor::{QueryAstTransformer, QueryAstVisitor};
 pub use wildcard_query::WildcardQuery;
 
 use crate::{BooleanOperand, InvalidQuery, NotNaNf32};
-use crate::query_ast::bloom_filter_query::BloomFilterQuery;
+use crate::query_ast::bloom_might_contain_query::BloomMightContainQuery;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(tag = "type")]
@@ -63,7 +63,7 @@ pub enum QueryAst {
     UserInput(UserInputQuery),
     Wildcard(WildcardQuery),
     Regex(RegexQuery),
-    BloomFilter(BloomFilterQuery),
+    BloomMightContain(BloomMightContainQuery),
     MatchAll,
     MatchNone,
     Boost {
@@ -108,7 +108,7 @@ impl QueryAst {
             | ast @ QueryAst::Range(_)
             | ast @ QueryAst::Wildcard(_)
             | ast @ QueryAst::Regex(_) 
-            | ast @ QueryAst::BloomFilter(_)
+            | ast @ QueryAst::BloomMightContain(_)
             => Ok(ast),
             QueryAst::UserInput(user_text_query) => {
                 user_text_query.parse_user_query(default_search_fields)
@@ -259,7 +259,7 @@ impl BuildTantivyAst for QueryAst {
                 search_fields,
                 with_validation,
             ),
-            QueryAst::BloomFilter(bloom_filter) => bloom_filter.build_tantivy_ast_call(
+            QueryAst::BloomMightContain(bloom_filter) => bloom_filter.build_tantivy_ast_call(
                 schema,
                 tokenizer_manager,
                 search_fields,

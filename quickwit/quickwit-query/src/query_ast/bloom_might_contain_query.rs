@@ -11,14 +11,14 @@ use tantivy::schema::{Field, FieldType, Schema as TantivySchema};
 use crate::elastic_query_dsl::ConvertibleToQueryAst;
 
 #[derive(PartialEq, Eq, Debug, Serialize, Deserialize, Clone)]
-pub struct BloomFilterQuery {
+pub struct BloomMightContainQuery {
     pub field: String,
     pub bloom_filter_base64: String,
     /// Support missing fields
     pub lenient: bool,
 }
 
-impl BloomFilterQuery {
+impl BloomMightContainQuery {
     pub fn to_field_and_bloom_filter(
         &self,
         schema: &TantivySchema,
@@ -78,7 +78,7 @@ impl BloomFilterQuery {
     }
 }
 
-impl BuildTantivyAst for BloomFilterQuery {
+impl BuildTantivyAst for BloomMightContainQuery {
     fn build_tantivy_ast_impl(
         &self,
         schema: &TantivySchema,
@@ -89,7 +89,7 @@ impl BuildTantivyAst for BloomFilterQuery {
         let (field, _json_path_bytes, bloom_filter_base64) = self.to_field_and_bloom_filter(schema)?;
         if let Ok(bloom_filter) = BASE64.decode(bloom_filter_base64) {
             return Ok(TantivyQueryAst::from(
-                tantivy::query::BloomfilterQuery::new(
+                tantivy::query::BloomMightContainQuery::new(
                     Term::from_field_bytes(field, &bloom_filter),
                     self.field.clone(),
                 ),
@@ -101,17 +101,17 @@ impl BuildTantivyAst for BloomFilterQuery {
     }
 }
 
-impl From<BloomFilterQuery> for QueryAst {
-    fn from(bloom_filter_query: BloomFilterQuery) -> Self {
-        QueryAst::BloomFilter(bloom_filter_query)
+impl From<BloomMightContainQuery> for QueryAst {
+    fn from(bloom_filter_query: BloomMightContainQuery) -> Self {
+        QueryAst::BloomMightContain(bloom_filter_query)
     }
 }
 
 
 
-impl ConvertibleToQueryAst for BloomFilterQuery {
+impl ConvertibleToQueryAst for BloomMightContainQuery {
     fn convert_to_query_ast(self) -> anyhow::Result<QueryAst> {
-        Ok(BloomFilterQuery{
+        Ok(BloomMightContainQuery {
             field: self.field,
             bloom_filter_base64: self.bloom_filter_base64,
             lenient: self.lenient,
@@ -124,7 +124,7 @@ impl ConvertibleToQueryAst for BloomFilterQuery {
 mod tests {
     use tantivy::schema::{FAST, TEXT};
 
-    use crate::query_ast::bloom_filter_query::BloomFilterQuery;
+    use crate::query_ast::bloom_might_contain_query::BloomMightContainQuery;
     use tantivy::schema::{Field, FieldType, Schema as TantivySchema};
 
     #[test]
@@ -135,7 +135,7 @@ mod tests {
 
         let bloom_filter_base64 = "AbQAAAAAAAAACgAAAGY+SCeG/ZunYn1NCgb7ZNqDjdukxYCCqonsR0YMd80ICAABAAAAAQAAQAAABAAAAAAAAAAAAAAQAAAAAAAAAAABAAAEAIAAAAAAAAEAAAAAAAAAAAAAAAgAAAAAAAAAIAAAAAAQAAAAAAAAAAAAAAACAAAAAAAABAAAAAAAAACEAAAAAAAAAABAAAAAAAAAAAIAAAAAAAAKAAgAAAAAAAAAAgCAAAAAACAAAAAACABAAAAAAAAAAAAAACIAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAA".to_string();
 
-        let query = BloomFilterQuery {
+        let query = BloomMightContainQuery {
             field: "field".to_string(),
             bloom_filter_base64: bloom_filter_base64.clone(),
             lenient: false,

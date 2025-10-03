@@ -26,7 +26,7 @@ use tantivy::Term;
 use tantivy::query::{ Query};
 use tantivy::schema::{Field, Schema};
 use tracing::error;
-use quickwit_query::query_ast::bloom_filter_query::BloomFilterQuery;
+use quickwit_query::query_ast::bloom_might_contain_query::BloomMightContainQuery;
 use crate::doc_mapper::FastFieldWarmupInfo;
 use crate::{Automaton, QueryParserError, TermRange, WarmupInfo};
 
@@ -328,7 +328,7 @@ struct ExtractBloomfilterFields<'a> {
 impl<'a> QueryAstVisitor<'a> for ExtractBloomfilterFields<'_> {
     type Err = anyhow::Error;
 
-    fn visit_bloomfilter(&mut self, bloomfilter_query: &'a BloomFilterQuery) -> Result<(), Self::Err> {
+    fn visit_bloomfilter(&mut self, bloomfilter_query: &'a BloomMightContainQuery) -> Result<(), Self::Err> {
         if let Some((field, _field_entry, _path)) =
             find_field_or_hit_dynamic(&bloomfilter_query.field, self.schema)
         {
