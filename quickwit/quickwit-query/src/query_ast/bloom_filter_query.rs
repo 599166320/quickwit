@@ -8,6 +8,7 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use serde::{Deserialize, Serialize};
 use tantivy::Term;
 use tantivy::schema::{Field, FieldType, Schema as TantivySchema};
+use crate::elastic_query_dsl::ConvertibleToQueryAst;
 
 #[derive(PartialEq, Eq, Debug, Serialize, Deserialize, Clone)]
 pub struct BloomFilterQuery {
@@ -105,6 +106,19 @@ impl From<BloomFilterQuery> for QueryAst {
         QueryAst::BloomFilter(bloom_filter_query)
     }
 }
+
+
+
+impl ConvertibleToQueryAst for BloomFilterQuery {
+    fn convert_to_query_ast(self) -> anyhow::Result<QueryAst> {
+        Ok(BloomFilterQuery{
+            field: self.field,
+            bloom_filter_base64: self.bloom_filter_base64,
+            lenient: self.lenient,
+        }.into())
+    }
+}
+
 
 #[cfg(test)]
 mod tests {

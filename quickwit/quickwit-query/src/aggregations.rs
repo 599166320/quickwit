@@ -21,11 +21,7 @@ use tantivy::aggregation::agg_result::{
     BucketResult as TantivyBucketResult, MetricResult as TantivyMetricResult,
     RangeBucketEntry as TantivyRangeBucketEntry,
 };
-use tantivy::aggregation::metric::{
-    ExtendedStats, PercentileValues as TantivyPercentileValues, PercentileValuesVecEntry,
-    PercentilesMetricResult as TantivyPercentilesMetricResult, SingleMetricResult, Stats,
-    TopHitsMetricResult,
-};
+use tantivy::aggregation::metric::{BloomFilterMetricResult, ExtendedStats, PercentileValues as TantivyPercentileValues, PercentileValuesVecEntry, PercentilesMetricResult as TantivyPercentilesMetricResult, SingleMetricResult, Stats, TopHitsMetricResult};
 
 // hopefully all From in this module are no-ops, otherwise, this is a very sad situation
 
@@ -103,6 +99,8 @@ pub enum MetricResult {
     TopHits(TopHitsMetricResult),
     /// Cardinality metric result
     Cardinality(SingleMetricResult),
+    BloomFilter(BloomFilterMetricResult),
+
 }
 
 impl From<TantivyMetricResult> for MetricResult {
@@ -118,6 +116,7 @@ impl From<TantivyMetricResult> for MetricResult {
             TantivyMetricResult::Percentiles(val) => MetricResult::Percentiles(val.into()),
             TantivyMetricResult::TopHits(val) => MetricResult::TopHits(val),
             TantivyMetricResult::Cardinality(val) => MetricResult::Cardinality(val),
+            TantivyMetricResult::BloomFilter(val) => { MetricResult::BloomFilter(val) }
         }
     }
 }
@@ -135,6 +134,7 @@ impl From<MetricResult> for TantivyMetricResult {
             MetricResult::Percentiles(val) => TantivyMetricResult::Percentiles(val.into()),
             MetricResult::TopHits(val) => TantivyMetricResult::TopHits(val),
             MetricResult::Cardinality(val) => TantivyMetricResult::Cardinality(val),
+            MetricResult::BloomFilter(val) => TantivyMetricResult::BloomFilter(val),
         }
     }
 }
