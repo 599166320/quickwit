@@ -42,7 +42,6 @@ mod search_permit_provider;
 
 #[cfg(test)]
 mod tests;
-mod bloom_filter_collector;
 
 pub use collector::QuickwitAggregations;
 use metrics::SEARCH_METRICS;
