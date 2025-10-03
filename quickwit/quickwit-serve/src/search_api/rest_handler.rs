@@ -19,12 +19,11 @@ use percent_encoding::percent_decode_str;
 use quickwit_config::validate_index_id_pattern;
 use quickwit_proto::search::{CountHits, SortField, SortOrder};
 use quickwit_query::query_ast::query_ast_from_user_text;
-use quickwit_search::{SearchError, SearchPlanResponseRest, SearchResponseRest, SearchService};
+use quickwit_search::{MergeBloomResponseRest, SearchError, SearchPlanResponseRest, SearchResponseRest, SearchService};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
 use tracing::info;
 use warp::{Filter, Rejection};
-
 use crate::rest_api_response::into_rest_api_response;
 use crate::simple_list::{from_simple_list, to_simple_list};
 use crate::{BodyFormat, with_arg};
@@ -36,6 +35,7 @@ use crate::{BodyFormat, with_arg};
         search_post_handler,
         search_plan_get_handler,
         search_plan_post_handler,
+        merge_bloom_handler
     ),
     components(schemas(
         BodyFormat,
@@ -45,6 +45,7 @@ use crate::{BodyFormat, with_arg};
         SortBy,
         SortField,
         SortOrder,
+        MergeBloomRequestString
     ),)
 )]
 pub struct SearchApi;
@@ -142,6 +143,16 @@ impl Serialize for SortBy {
 fn default_max_hits() -> u64 {
     20
 }
+
+#[derive(
+    Debug, Default, Eq, PartialEq, Serialize, Deserialize, utoipa::IntoParams, utoipa::ToSchema,
+)]
+#[into_params(parameter_in = Query)]
+#[serde(deny_unknown_fields)]
+pub struct MergeBloomRequestString {
+    pub bloom_str_list: Vec<String>,
+}
+
 
 /// This struct represents the QueryString passed to
 /// the rest API.
@@ -336,6 +347,45 @@ async fn search(
     let body_format = search_request.format;
     let result = search_endpoint(index_id_patterns, search_request, &*search_service).await;
     into_rest_api_response(result, body_format)
+}
+
+async fn merge_bloom_endpoint(
+    _index_id_patterns: Vec<String>,
+    request: MergeBloomRequestString,
+    _search_service: Arc<dyn SearchService>,
+) -> impl warp::Reply {
+    let  resp = MergeBloomResponseRest::merge_bloom_str(&request.bloom_str_list);
+    into_rest_api_response::<MergeBloomResponseRest, SearchError>(Ok(resp), BodyFormat::Json)
+}
+
+
+#[utoipa::path(
+    post,
+    tag = "MergeBloom",
+    path = "/{index_id}/merge-bloom",
+    request_body = MergeBloomRequestString,
+    responses(
+        (status = 200, description = "Successfully executed search.", body = MergeBloomResponseRest)
+    ),
+    params(
+        ("index_id" = String, Path, description = "The index ID to search."),
+    )
+)]
+/// Merge bloom filter (POST Variant)
+///
+/// POST merge bloom handler.
+///
+/// Parses the merge bloom request from the request body.
+pub fn merge_bloom_handler(
+    search_service: Arc<dyn SearchService>,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    warp::path!(String / "merge-bloom")
+        .and_then(extract_index_id_patterns)
+        .and(warp::post())
+        .and(warp::body::content_length_limit(1024 * 1024))
+        .and(warp::body::json())
+        .and(with_arg(search_service))
+        .then(merge_bloom_endpoint)
 }
 
 async fn search_plan(

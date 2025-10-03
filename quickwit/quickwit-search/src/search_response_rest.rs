@@ -37,6 +37,23 @@ impl AggregationResults {
     }
 }
 
+
+#[derive(Serialize, PartialEq, Debug, utoipa::ToSchema)]
+pub struct MergeBloomResponseRest {
+    pub bloom_str: String,
+}
+
+impl MergeBloomResponseRest {
+    pub fn merge_bloom_str(bloom_base64_list: &Vec<String>) -> Self{
+        let mut base64_str = "".to_string();
+        if let Some(bloom) = tantivy::bloom::bloom_utils::merge_bloom_str(bloom_base64_list) {
+            base64_str = tantivy::bloom::bloom_utils::bloom_to_base64_str(&bloom);
+        }
+        Self { bloom_str: base64_str }
+    }
+}
+
+
 /// SearchResponseRest represents the response returned by the REST search API
 /// and is meant to be serialized into JSON.
 #[derive(Serialize, PartialEq, Debug, utoipa::ToSchema)]
